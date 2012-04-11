@@ -10,7 +10,7 @@ class db_session:
     def get_engine(database_uri):
         if not database_uri in db_session.engines:
             db_session.engines[database_uri] = sa.create_engine(
-                database_uri, pool_size=10, max_overflow=0, echo=False)
+                database_uri, echo=True)
         return db_session.engines[database_uri]
 
     def __init__(self, database_uri):

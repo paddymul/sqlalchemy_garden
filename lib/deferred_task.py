@@ -1,10 +1,24 @@
-from celery.task import task as ctask
+import pdb
+from conf import config 
+
 from sqlalchemy import event
 from sqlalchemy.orm import mapper
-from conf import config 
-from lib.db_connection import db_session
 from sqlalchemy.util.langhelpers import symbol
+
+from sqlalchemy.sql.expression import Select
 NO_VALUE = symbol("NO_VALUE")
+
+from lib.db_connection import db_session
+
+try:
+    from celery.task import task as ctask
+    CELERY_INSTALLED = True
+except ImportError, e:
+    print "You don't have celery installed, running in syncronous mode"
+    def ctask(actual_func, *args, **kwargs):
+        return actual_func
+    CELERY_INSTALLED = False
+
 
 class deferred(object):
     def __init__(self, trigger_condition,
@@ -36,18 +50,12 @@ class deferred(object):
             this is the first command that is run by the celery-daemon
             """
             with db_session(config.DB_URI) as s:
-                try:
-                    p = s.query(self.TableObject).filter_by(id=target_id)[0]
-                    if self.run_predicate(p):
-                        # run the originally decorated function
-                        self.actual_task(p, s)
-                        s.add(p)
-                        s.commit()
-                except Exception, e:
-                    print "="*80
-                    pdb.set_trace()
-                    print "="*80
-                    raise
+                p = s.query(self.TableObject).filter_by(id=target_id)[0]
+                if self.run_predicate(p):
+                    # run the originally decorated function
+                    self.actual_task(p, s)
+                    s.add(p)
+                    s.commit()
         self._task_wrapper = _task_wrapper
         self.celery_task = ctask(_task_wrapper, name=self.task_name)
 
@@ -87,7 +95,7 @@ class deferred(object):
                 field_change_callback, retval=False)
         import pdb
         def run_it(target_id):
-            if config.CELERY_SYNCHRONOUS:
+            if config.CELERY_SYNCHRONOUS or not CELERY_INSTALLED:
                 self._task_wrapper(target_id)
             else:
                 self.celery_task.delay(target_id)
@@ -121,8 +129,7 @@ class deferred(object):
         
         # here we register the listener for the @deferred trigger_condition
         event.listen(TableObject, self.trigger_condition, trigger_f)
-import pdb
-from sqlalchemy.sql.expression import Select
+
 def conn_after_execute(conn, clauseelement, multiparams, params, result):
     eng = conn.engine
     l_doits = len(eng.do_its)
@@ -130,14 +137,12 @@ def conn_after_execute(conn, clauseelement, multiparams, params, result):
         return
     
 
-    print "CONN_AFTER", l_doits
     
     local_doits = []
     for do_it in eng.do_its:
         print do_it.task_name, do_it.target_id
         local_doits.append(do_it)
     print clauseelement
-    pdb.set_trace()
     eng.do_its = []
     for do_it in local_doits:
         do_it()
@@ -175,9 +180,14 @@ Order of operations:
 -----
 The above functions always run, whether in the daemon, or in an enqueing context. 
 
+
 The following functions only run at enqueing time.
 
-6. If and only if the trigger_condition is met,
+6. setup the listener on the enigne "after_execute event", this will
+trigger 7 if the proper pre conditions are met.
+
+
+7. If and only if the trigger_condition is met,
    deferred.setup_sql_listener[trigger_f] is called by the event
    callback.  the trigger_f's only job is to enqueue the actual_task,
    that was created by deferred.make_task.  Trigger_f checks that
@@ -189,7 +199,7 @@ The following functions only run at enqueing time.
 -----
 The following functions only run on the daemon side
 
-7. deferred.actual_task is called with the instance_id of the enqueue
+8. deferred.actual_task is called with the instance_id of the enqueue
    object.  It re-instatiates the object, then calls after_predicate,
    passing in the instance.  if after_predicate returns_true, the
    decorated function is run, recieving an instance of the object and

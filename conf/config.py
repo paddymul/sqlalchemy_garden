@@ -1,1 +1,2 @@
-DB_URI = 'sqlite:///foo.db'
+DB_URI = 'sqlite://'
+CELERY_SYNCHRONOUS = True
