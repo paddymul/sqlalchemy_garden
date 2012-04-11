@@ -1,0 +1,28 @@
+*.pyc
+*.swp
+config_local.py
+.DS_Store
+data/pins/*
+.noseids
+celeryev.pid
+
+# ignore .ropeproject dirs
+.ropeproject/
+
+
+# ignore emacs temp files
+*~
+*\#*
+
+*nohup.out
+:memory
+log/*
+.coverage
+
+# ignore bundled assets
+static/.webassets-cache/*
+static/bundled/*
+
+static/FSE_DIR/*
+
+conf/environments_local.py
